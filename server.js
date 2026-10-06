@@ -46,7 +46,7 @@ const sessionSchema = new mongoose.Schema({
   sessionId: { type: String, unique: true, index: true },
   status: {
     type: String,
-    enum: ["connecting", "waiting", "connected", "logged_out", "error"],
+    enum: ["connecting", "waiting", "connected", "ready", "logged_out", "error"],
     default: "connecting"
   },
   phoneNumber: String,
@@ -262,6 +262,7 @@ async function startSocket(sessionId, phoneNumber, mode, restartCount = 0) {
 
   let pairingRequested = false;
   let finished = false;
+  let handoff = false;
 
   sock.ev.on("connection.update", async update => {
     const { connection, qr, lastDisconnect } = update;
@@ -326,6 +327,20 @@ async function startSocket(sessionId, phoneNumber, mode, restartCount = 0) {
             console.log("Session ID message already sent:", sessionId);
           }
         }
+
+        // Pair-web provisions the session, then releases the WhatsApp socket.
+        // The bot becomes the sole connection owner after pairing.
+        handoff = true;
+        sockets.delete(sessionId);
+        await updateSession(sessionId, {
+          status: "ready",
+          pairingCode: null,
+          qr: null,
+          error: null
+        });
+        setTimeout(() => {
+          try { sock.ws?.close(); } catch {}
+        }, 250);
       }
 
       if (connection === "close") {
@@ -342,6 +357,11 @@ async function startSocket(sessionId, phoneNumber, mode, restartCount = 0) {
         });
 
         sockets.delete(sessionId);
+
+        if (handoff) {
+          console.log("Session handoff complete:", sessionId);
+          return;
+        }
 
         if (code === DisconnectReason.loggedOut) {
           await updateSession(sessionId, {
