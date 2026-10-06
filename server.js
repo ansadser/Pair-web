@@ -104,9 +104,11 @@ function decrypt(value) {
 }
 
 function safeJson(value) {
-  return JSON.stringify(value, (_, v) =>
-    Buffer.isBuffer(v) ? { type: "Buffer", data: [...v] } : v
-  );
+  return JSON.stringify(value, (_, v) => {
+    if (Buffer.isBuffer(v)) return { type: "Buffer", data: [...v] };
+    if (v instanceof Uint8Array) return { type: "Buffer", data: [...v] };
+    return v;
+  });
 }
 
 function reviveJson(value) {
@@ -117,12 +119,31 @@ function reviveJson(value) {
   );
 }
 
+const authWriteQueues = new Map();
+
+function queueAuthWrite(queueKey, job) {
+  const previous = authWriteQueues.get(queueKey) || Promise.resolve();
+  const next = previous.catch(() => {}).then(job);
+  authWriteQueues.set(queueKey, next.finally(() => {
+    if (authWriteQueues.get(queueKey) === next) authWriteQueues.delete(queueKey);
+  }));
+  return next;
+}
+
 async function saveAuth(sessionId, category, key, value) {
-  await Auth.findOneAndUpdate(
-    { sessionId, category, key },
-    { $set: { value: encrypt(safeJson(value)), updatedAt: new Date() } },
-    { upsert: true, new: true }
-  );
+  const queueKey = sessionId + ":" + category + ":" + key;
+  return queueAuthWrite(queueKey, async () => {
+    if (value == null) {
+      await Auth.deleteOne({ sessionId, category, key });
+      return;
+    }
+
+    await Auth.findOneAndUpdate(
+      { sessionId, category, key },
+      { $set: { value: encrypt(safeJson(value)), updatedAt: new Date() } },
+      { upsert: true, new: true }
+    );
+  });
 }
 
 async function loadAuth(sessionId, category, key) {
@@ -191,9 +212,13 @@ async function createAuthState(sessionId) {
     keys: {
       get: async (type, ids) => {
         const result = {};
-        for (const id of ids) {
-          result[id] = await loadAuth(sessionId, "key", type + ":" + id);
-        }
+        await Promise.all(ids.map(async id => {
+          let value = await loadAuth(sessionId, "key", type + ":" + id);
+          if (type === "app-state-sync-key" && value) {
+            value = Baileys.proto.Message.AppStateSyncKeyData.create(value);
+          }
+          result[id] = value;
+        }));
         return result;
       },
 
@@ -614,7 +639,7 @@ async function readSession(req, res) {
 app.get("/api/stats", async (_req, res) => {
   try {
     const total = await Session.countDocuments({});
-    const active = await Session.countDocuments({ status: "connected" });
+    const active = await Session.countDocuments({ status: { $in: ["connected", "ready"] } });
     res.json({
       success: true,
       total,
