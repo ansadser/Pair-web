@@ -559,6 +559,21 @@ async function readSession(req, res) {
   }
 }
 
+app.get("/api/stats", async (_req, res) => {
+  try {
+    const total = await Session.countDocuments({});
+    const active = await Session.countDocuments({ status: "connected" });
+    res.json({
+      success: true,
+      total,
+      active,
+      inactive: Math.max(0, total - active)
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Unable to read session stats" });
+  }
+});
+
 app.get("/api/session/:sessionId", readSession);
 app.get("/api/status/:sessionId", readSession);
 
