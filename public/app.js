@@ -1,3 +1,4 @@
+const API_BASE=(window.ROMA_API_BASE||"").replace(/\/$/,"");
 const $=id=>document.getElementById(id);let sid=null,timer=null;
 const pairTab=$("pairTab"),qrTab=$("qrTab"),pairSection=$("pairSection"),qrSection=$("qrSection");
 function status(t,c=""){ $("statusText").textContent=t;$("statusDot").className="status-dot "+c}
