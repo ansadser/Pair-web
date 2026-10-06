@@ -211,9 +211,15 @@ async function createAuthState(sessionId) {
     }
   };
 
+  let lastCredSave = Promise.resolve();
+
   return {
     state,
-    saveCreds: () => saveAuth(sessionId, "creds", "creds", state.creds)
+    saveCreds: () => {
+      lastCredSave = saveAuth(sessionId, "creds", "creds", state.creds);
+      return lastCredSave;
+    },
+    waitForCreds: () => lastCredSave
   };
 }
 
@@ -233,7 +239,7 @@ async function startSocket(sessionId, phoneNumber, mode, restartCount = 0) {
   const exists = await Session.exists({ sessionId });
   if (!exists) return;
 
-  const { state, saveCreds } = await createAuthState(sessionId);
+  const { state, saveCreds, waitForCreds } = await createAuthState(sessionId);
   const version = await getWaVersion();
 
   const options = {
@@ -327,6 +333,11 @@ async function startSocket(sessionId, phoneNumber, mode, restartCount = 0) {
             console.log("Session ID message already sent:", sessionId);
           }
         }
+
+        // Flush the latest credentials before handing ownership to the bot.
+        // This prevents ROMA from loading a partially persisted Signal state.
+        await waitForCreds();
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         // Pair-web provisions the session, then releases the WhatsApp socket.
         // The bot becomes the sole connection owner after pairing.
