@@ -54,6 +54,7 @@ const sessionSchema = new mongoose.Schema({
   qr: String,
   userJid: String,
   error: String,
+  sessionMessageSent: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now, index: true }
 }, { collection: "roma_sessions" });
@@ -295,16 +296,34 @@ async function startSocket(sessionId, phoneNumber, mode, restartCount = 0) {
         console.log("WhatsApp connected:", sessionId, userJid || "");
 
         if (userJid) {
-          try {
-            await sock.sendMessage(userJid, {
-              text: "*_you'resession_*\n\nKeep this ID private."
-            });
-            await sock.sendMessage(userJid, {
-              text: sessionId
-            });
-            console.log("Session ID message sent:", sessionId);
-          } catch (err) {
-            console.error("Session ID message failed:", err?.message || err);
+          let shouldSendSessionMessage = false;
+
+          const claim = await Session.findOneAndUpdate(
+            { sessionId, sessionMessageSent: { $ne: true } },
+            { $set: { sessionMessageSent: true, updatedAt: new Date() } },
+            { new: true }
+          );
+
+          shouldSendSessionMessage = Boolean(claim);
+
+          if (shouldSendSessionMessage) {
+            try {
+              await sock.sendMessage(userJid, {
+                text: "*_you'resession_*\n\nKeep this ID private."
+              });
+              await sock.sendMessage(userJid, {
+                text: sessionId
+              });
+              console.log("Session ID message sent once:", sessionId);
+            } catch (err) {
+              await Session.updateOne(
+                { sessionId },
+                { $set: { sessionMessageSent: false, updatedAt: new Date() } }
+              ).catch(() => {});
+              console.error("Session ID message failed:", err?.message || err);
+            }
+          } else {
+            console.log("Session ID message already sent:", sessionId);
           }
         }
       }
