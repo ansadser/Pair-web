@@ -216,7 +216,9 @@ async function createAuthState(sessionId) {
   return {
     state,
     saveCreds: () => {
-      lastCredSave = saveAuth(sessionId, "creds", "creds", state.creds);
+      lastCredSave = lastCredSave
+        .catch(() => {})
+        .then(() => saveAuth(sessionId, "creds", "creds", state.creds));
       return lastCredSave;
     },
     waitForCreds: () => lastCredSave
