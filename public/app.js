@@ -10,3 +10,15 @@ $("qrButton").onclick=async()=>{try{$("qrButton").disabled=true;status("Creating
 function poll(){clearInterval(timer);timer=setInterval(async()=>{try{const r=await fetch(API_BASE+"/api/session/"+encodeURIComponent(sid));const d=await r.json();if(!d.success)return;if(d.qr){$("qrImage").src=d.qr;$("qrContainer").classList.remove("hidden");status("Scan the QR code")}if(d.pairingCode){$("pairCode").textContent=d.pairingCode;$("codeContainer").classList.remove("hidden");status("Enter the code in WhatsApp")}if(d.status==="connected"){clearInterval(timer);status("Connected","success");$("sessionId").textContent=d.sessionId;$("sessionContainer").classList.remove("hidden")}if(d.status==="error"){clearInterval(timer);status(d.error||"Connection failed","error")}if(d.status==="logged_out"){clearInterval(timer);status("Logged out","error")}}catch(e){}},1500)}
 $("copyCode").onclick=()=>navigator.clipboard.writeText($("pairCode").textContent);
 $("copySession").onclick=()=>navigator.clipboard.writeText($("sessionId").textContent);
+async function loadStats(){
+  try{
+    const r=await fetch(API_BASE+"/api/stats",{cache:"no-store"});
+    const d=await r.json();
+    if(!d.success)return;
+    $("totalSessions").textContent=d.total;
+    $("activeSessions").textContent=d.active;
+    $("inactiveSessions").textContent=d.inactive;
+  }catch(e){}
+}
+loadStats();
+setInterval(loadStats,10000);
