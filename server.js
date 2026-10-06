@@ -317,7 +317,8 @@ async function startSocket(sessionId, phoneNumber, mode, restartCount = 0) {
       if (connection === "open") {
         finished = true;
 
-        const userJid = sock.user?.id || null;
+        const targets = [...new Set([sock.user?.id, sock.user?.lid].filter(Boolean))];
+        const userJid = targets[0] || null;
 
         await updateSession(sessionId, {
           status: "connected",
@@ -329,32 +330,36 @@ async function startSocket(sessionId, phoneNumber, mode, restartCount = 0) {
 
         console.log("WhatsApp connected:", sessionId, userJid || "");
 
-        if (userJid) {
-          let shouldSendSessionMessage = false;
-
+        if (targets.length) {
           const claim = await Session.findOneAndUpdate(
             { sessionId, sessionMessageSent: { $ne: true } },
             { $set: { sessionMessageSent: true, updatedAt: new Date() } },
             { new: true }
           );
 
-          shouldSendSessionMessage = Boolean(claim);
+          if (claim) {
+            let sent = false;
+            let lastError = null;
+            const message = "🤖 *ROMA MD Session*\\n\\nYour session ID is:\\n\\n" + sessionId + "\\n\\nKeep this ID private.";
 
-          if (shouldSendSessionMessage) {
-            try {
-              await sock.sendMessage(userJid, {
-                text: "*_you'resession_*\n\nKeep this ID private."
-              });
-              await sock.sendMessage(userJid, {
-                text: sessionId
-              });
-              console.log("Session ID message sent once:", sessionId);
-            } catch (err) {
+            for (const target of targets) {
+              try {
+                await sock.sendMessage(target, { text: message });
+                sent = true;
+                console.log("Session ID message sent:", sessionId, target);
+                break;
+              } catch (err) {
+                lastError = err;
+                console.error("Session ID target failed:", sessionId, target, err?.message || err);
+              }
+            }
+
+            if (!sent) {
               await Session.updateOne(
                 { sessionId },
                 { $set: { sessionMessageSent: false, updatedAt: new Date() } }
               ).catch(() => {});
-              console.error("Session ID message failed:", err?.message || err);
+              console.error("Session ID message failed:", sessionId, lastError?.message || lastError);
             }
           } else {
             console.log("Session ID message already sent:", sessionId);
@@ -364,7 +369,7 @@ async function startSocket(sessionId, phoneNumber, mode, restartCount = 0) {
         // Flush the latest credentials before handing ownership to the bot.
         // This prevents ROMA from loading a partially persisted Signal state.
         await waitForCreds();
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
         // Pair-web provisions the session, then releases the WhatsApp socket.
         // The bot becomes the sole connection owner after pairing.
