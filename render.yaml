@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: roma-pairing-web
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: SESSION_ENCRYPTION_KEY
+        sync: false
+      - key: INTERNAL_SECRET
+        sync: false
+      - key: SESSION_PREFIX
+        value: "ROMA~"
+      - key: PORT
+        value: "10000"
